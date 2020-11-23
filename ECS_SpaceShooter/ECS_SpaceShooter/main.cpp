@@ -16,6 +16,30 @@ int GetId()
 	return s_componentId;
 }
 
+struct ComponentPool
+{
+	ComponentPool(size_t elementsize)
+	{
+		// We'll allocate enough memory to hold MAX_ENTITIES, each with element size
+		elementsize = elementsize;
+		pData = new char[elementsize * MAX_ENTITIES];
+	}
+
+	~ComponentPool()
+	{
+		delete[] pData;
+	}
+
+	inline void* get(size_t index)
+	{
+		// looking up the component at the desired index
+		return pData + index * elementSize;
+	}
+
+	char* pData{ nullptr };
+	size_t elementSize{ 0 };
+};
+
 struct Scene
 {
 	//All the information we need about each entity
@@ -32,36 +56,42 @@ struct Scene
 		return entities.back().id;
 	}
 
+	std::vector<ComponentPool> componentPools;
+
 	template<typename T>
-	void Assign(EntityID id) 
+	T* Assign(EntityID id)
 	{
 		int componentId = GetId<T>();
+
+		if (componentPools.size() <= componentId) // Not enough component pool
+		{
+			componentPools.resize(componentId + 1, nullptr);
+		}
+		if (componentPools[componentId] == nullptr) // New component, make a new pool
+		{
+			componentPools[componentId] = new ComponentPool(sizeof(T));
+		}
+
+		// Looks up the component in the pool, and initializes it with placement new
+		T* pComponent = new (componentPools[componentId]->get(id)) T();
+
+		// Set the bit of for this component to true and return the created component
 		entities[id].mask.set(componentId);
-	}
-};
-
-struct ComponentPool 
-{
-	ComponentPool(size_t elementsize) 
-	{
-		// We'll allocate enough memory to hold MAX_ENTITIES, each with element size
-		elementsize = elementsize;
-		pData = new char[elementsize * MAX_ENTITIES];
+		return pComponent;
 	}
 
-	~ComponentPool() 
+	template<typename T>
+	T* Get(EntityID id) 
 	{
-		delete[] pData;
-	}
-	
-	inline void* get(size_t index) 
-	{
-		// looking up the component at the desired index
-		return pData + index * elementSize;
-	}
+		int componentId = GetId<T>();
+		if (!entities[id].mask.test(componentId))
+		{
+			return nullptr;
+		}
 
-	char* pData{ nullptr };
-	size_t elementSize{ 0 };
+		T* pComponent = static_cast<T*>(componentPools[componentId]->ComponentPool(id));
+		return pComponent;
+	}
 };
 
 struct TransformComponent
